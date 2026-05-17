@@ -7,8 +7,26 @@ export default function PivotCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [a, setA] = useState(7);
   const [b, setB] = useState(8);
-  const [bones, setBones] = useState(420);
-  const [combo, setCombo] = useState(1);
+
+  // Persistence: Load from localStorage
+  const [bones, setBones] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('shadow-pivot-bones');
+      return saved ? parseInt(saved, 10) : 420;
+    }
+    return 420;
+  });
+
+  const [combo, setCombo] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('shadow-pivot-combo');
+      return saved ? parseInt(saved, 10) : 1;
+    }
+    return 1;
+  });
+
+  // Raid Mode state (skeleton)
+  const [raidMode, setRaidMode] = useState(false);
 
   const liveRegionRef = useRef<HTMLDivElement>(null);
 
@@ -19,7 +37,6 @@ export default function PivotCanvas() {
   const draggingRef = useRef<'left' | 'right' | null>(null);
   const prefersReducedMotionRef = useRef(false);
 
-  // For subtle product pop animation
   const lastProductRef = useRef(56);
   const productPopRef = useRef(0);
 
@@ -27,6 +44,15 @@ export default function PivotCanvas() {
   useEffect(() => { bRef.current = b; }, [b]);
   useEffect(() => { bonesRef.current = bones; }, [bones]);
   useEffect(() => { comboRef.current = combo; }, [combo]);
+
+  // Persist bones and combo whenever they change
+  useEffect(() => {
+    localStorage.setItem('shadow-pivot-bones', bones.toString());
+  }, [bones]);
+
+  useEffect(() => {
+    localStorage.setItem('shadow-pivot-combo', combo.toString());
+  }, [combo]);
 
   // Respect prefers-reduced-motion
   useEffect(() => {
@@ -48,7 +74,6 @@ export default function PivotCanvas() {
   const LEFT_PIVOT_X = 150;
   const RIGHT_PIVOT_X = 1050;
 
-  // Keep product box comfortably inside the canvas
   const PRODUCT_BOX_WIDTH = 130;
   const PRODUCT_BOX_HEIGHT = 90;
   const MARGIN = 80;
@@ -62,15 +87,11 @@ export default function PivotCanvas() {
     }
   };
 
-  // Calculate intersection of two lines
   const getLineIntersection = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) => {
     const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
     if (Math.abs(denom) < 0.001) return null;
     const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-    return {
-      x: x1 + t * (x2 - x1),
-      y: y1 + t * (y2 - y1),
-    };
+    return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
   };
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -106,14 +127,12 @@ export default function PivotCanvas() {
     const draw = () => {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-      // Background
       const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       grad.addColorStop(0, '#1a1a1a');
       grad.addColorStop(1, '#0f0a05');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      // Ruler
       ctx.strokeStyle = '#22ff88';
       ctx.lineWidth = 8;
       ctx.beginPath();
@@ -130,7 +149,6 @@ export default function PivotCanvas() {
         ctx.fillText(i.toString(), x - 10, RULER_Y + 55);
       }
 
-      // Red pivots
       ctx.fillStyle = '#ff0033';
       ctx.shadowBlur = 40;
       ctx.shadowColor = '#ff0033';
@@ -140,14 +158,12 @@ export default function PivotCanvas() {
       const pointerLeftX = 100 + (aRef.current * 83.33);
       const pointerRightX = 100 + (bRef.current * 83.33);
 
-      // Cyan pointers
       ctx.shadowBlur = 30;
       ctx.shadowColor = '#00ffff';
       ctx.fillStyle = '#00ffff';
       ctx.beginPath(); ctx.arc(pointerLeftX, RULER_Y - 40, 28, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(pointerRightX, RULER_Y - 40, 28, 0, Math.PI * 2); ctx.fill();
 
-      // Crossing lines
       ctx.strokeStyle = '#ffcc00';
       ctx.lineWidth = 14;
       ctx.shadowBlur = 25;
@@ -163,15 +179,11 @@ export default function PivotCanvas() {
 
       const product = aRef.current * bRef.current;
 
-      // Calculate intersection point
       const intersection = getLineIntersection(
-        LEFT_PIVOT_X, PIVOT_Y,
-        pointerRightX, RULER_Y - 40,
-        RIGHT_PIVOT_X, PIVOT_Y,
-        pointerLeftX, RULER_Y - 40
+        LEFT_PIVOT_X, PIVOT_Y, pointerRightX, RULER_Y - 40,
+        RIGHT_PIVOT_X, PIVOT_Y, pointerLeftX, RULER_Y - 40
       );
 
-      // Default to center, then try to use intersection with clamping
       let targetX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
       let targetY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.42;
 
@@ -180,7 +192,6 @@ export default function PivotCanvas() {
         targetY = intersection.y;
       }
 
-      // Clamp so the product box never clips
       const minX = MARGIN + PRODUCT_BOX_WIDTH / 2;
       const maxX = WIDTH - MARGIN - PRODUCT_BOX_WIDTH / 2;
       const minY = 120;
@@ -189,7 +200,6 @@ export default function PivotCanvas() {
       const interX = Math.max(minX, Math.min(maxX, targetX));
       const interY = Math.max(minY, Math.min(maxY, targetY));
 
-      // Trigger pop animation when product changes
       if (product !== lastProductRef.current) {
         productPopRef.current = 9;
         lastProductRef.current = product;
@@ -201,7 +211,6 @@ export default function PivotCanvas() {
 
       if (productPopRef.current > 0) productPopRef.current--;
 
-      // Draw product box (clamped + pop animation)
       ctx.save();
       ctx.translate(interX, interY);
       ctx.scale(popScale, popScale);
@@ -254,7 +263,9 @@ export default function PivotCanvas() {
         setA(aRef.current);
         setB(bRef.current);
 
-        const newBones = bonesRef.current + 10 * comboRef.current;
+        // In Raid Mode, multiply bone rewards
+        const multiplier = raidMode ? 2 : 1;
+        const newBones = bonesRef.current + (10 * comboRef.current * multiplier);
         setBones(newBones);
         bonesRef.current = newBones;
 
@@ -266,7 +277,8 @@ export default function PivotCanvas() {
           confetti({ particleCount: 120, spread: 80, origin: { x: 0.5, y: 0.6 } });
         }
 
-        announce(`Pivot complete. Product is ${aRef.current * bRef.current}. Bones increased to ${newBones}. Combo x${newCombo}`);
+        const modeText = raidMode ? ' (Raid Mode!)' : '';
+        announce(`Pivot complete${modeText}. Product is ${aRef.current * bRef.current}. Bones increased to ${newBones}. Combo x${newCombo}`);
       }
       draggingRef.current = null;
     };
@@ -281,7 +293,14 @@ export default function PivotCanvas() {
       canvas.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, []);
+  }, [raidMode]); // Re-run effect when raidMode changes so handlePointerUp has latest value
+
+  // Simple Raid Mode toggle handler
+  const toggleRaidMode = () => {
+    const newMode = !raidMode;
+    setRaidMode(newMode);
+    announce(newMode ? 'Raid Mode activated! Bone rewards doubled.' : 'Raid Mode deactivated.');
+  };
 
   return (
     <div className="relative">
@@ -312,10 +331,29 @@ export default function PivotCanvas() {
         The large yellow number shows the current product.
       </div>
 
+      {/* Bones + Combo Display */}
       <div className="absolute top-8 left-8 bg-black/70 px-6 py-3 rounded-2xl text-3xl font-bold text-[#ffff00] flex items-center gap-3">
         🐼💀 BONES: <span className="text-[#00ffcc]">{bones}</span>
         <span className="text-2xl">×{combo}</span>
       </div>
+
+      {/* Raid Mode Toggle (Skeleton) */}
+      <button
+        onClick={toggleRaidMode}
+        className={`absolute top-8 right-8 px-5 py-2 rounded-2xl text-sm font-bold transition-all active:scale-[0.985] border
+          ${raidMode
+            ? 'bg-[#ff3366] text-white border-[#ff3366] shadow-[0_0_20px_#ff3366]'
+            : 'bg-black/70 text-[#ffcc00] border-[#ffcc00]/40 hover:border-[#ffcc00]'
+          }`}
+      >
+        {raidMode ? '⚔️ RAID MODE ACTIVE' : '⚔️ Enter Raid Mode'}
+      </button>
+
+      {raidMode && (
+        <div className="absolute top-20 right-8 text-[10px] text-[#ff3366] font-mono tracking-widest">
+          2× BONE REWARDS
+        </div>
+      )}
     </div>
   );
 }
