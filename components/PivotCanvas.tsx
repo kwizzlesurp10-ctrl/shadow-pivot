@@ -10,6 +10,19 @@ export default function PivotCanvas() {
   const [bones, setBones] = useState(420);
   const [combo, setCombo] = useState(1);
 
+  // Refs for live values inside RAF without causing re-renders or effect restarts
+  const aRef = useRef(a);
+  const bRef = useRef(b);
+  const bonesRef = useRef(bones);
+  const comboRef = useRef(combo);
+  const draggingRef = useRef<'left' | 'right' | null>(null);
+
+  // Keep refs in sync when React state updates (e.g. after pointer up)
+  useEffect(() => { aRef.current = a; }, [a]);
+  useEffect(() => { bRef.current = b; }, [b]);
+  useEffect(() => { bonesRef.current = bones; }, [bones]);
+  useEffect(() => { comboRef.current = combo; }, [combo]);
+
   const WIDTH = 1200;
   const HEIGHT = 700;
   const RULER_Y = 520;
@@ -20,13 +33,13 @@ export default function PivotCanvas() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { alpha: true })!;
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
 
-    let dragging: 'left' | 'right' | null = null;
+    let rafId: number;
 
-    function draw() {
+    const draw = () => {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
       const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
@@ -57,8 +70,8 @@ export default function PivotCanvas() {
       ctx.fillRect(LEFT_PIVOT_X - 18, PIVOT_Y - 18, 36, 36);
       ctx.fillRect(RIGHT_PIVOT_X - 18, PIVOT_Y - 18, 36, 36);
 
-      const pointerLeftX = 100 + (a * 83.33);
-      const pointerRightX = 100 + (b * 83.33);
+      const pointerLeftX = 100 + (aRef.current * 83.33);
+      const pointerRightX = 100 + (bRef.current * 83.33);
 
       ctx.shadowBlur = 30;
       ctx.shadowColor = '#00ffff';
@@ -79,8 +92,9 @@ export default function PivotCanvas() {
       ctx.lineTo(pointerLeftX, RULER_Y - 40);
       ctx.stroke();
 
-      const product = a * b;
-      const interX = (LEFT_PIVOT_X * (RIGHT_PIVOT_X - pointerLeftX) + RIGHT_PIVOT_X * (pointerRightX - LEFT_PIVOT_X)) / (RIGHT_PIVOT_X - LEFT_PIVOT_X + pointerRightX - pointerLeftX);
+      const product = aRef.current * bRef.current;
+      // Simplified stable positioning for the product box (centered for reliability)
+      const interX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
       const interY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.45;
 
       ctx.shadowBlur = 60;
@@ -96,43 +110,51 @@ export default function PivotCanvas() {
       ctx.textAlign = 'center';
       ctx.fillText(product.toString(), interX, interY + 22);
 
-      if (Math.random() < 0.05) {
-        confetti({ particleCount: 5, spread: 20, origin: { x: interX / WIDTH, y: interY / HEIGHT } });
-      }
-
-      requestAnimationFrame(draw);
-    }
+      rafId = requestAnimationFrame(draw);
+    };
 
     draw();
 
     const handlePointerDown = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const pointerLeftX = 100 + (a * 83.33);
-      const pointerRightX = 100 + (b * 83.33);
-      if (Math.abs(x - pointerLeftX) < 50) dragging = 'left';
-      else if (Math.abs(x - pointerRightX) < 50) dragging = 'right';
+      const pointerLeftX = 100 + (aRef.current * 83.33);
+      const pointerRightX = 100 + (bRef.current * 83.33);
+      if (Math.abs(x - pointerLeftX) < 50) draggingRef.current = 'left';
+      else if (Math.abs(x - pointerRightX) < 50) draggingRef.current = 'right';
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (!dragging) return;
+      if (!draggingRef.current) return;
       const rect = canvas.getBoundingClientRect();
       let x = e.clientX - rect.left;
       x = Math.max(100, Math.min(1100, x));
       const unit = Math.round((x - 100) / 83.33);
       const clamped = Math.max(1, Math.min(12, unit));
-      if (dragging === 'left') setA(clamped);
-      else setB(clamped);
+      if (draggingRef.current === 'left') {
+        aRef.current = clamped;
+      } else {
+        bRef.current = clamped;
+      }
     };
 
     const handlePointerUp = () => {
-      if (dragging) {
-        const newBones = bones + 10 * combo;
+      if (draggingRef.current) {
+        // Commit final values to React state for UI sync
+        setA(aRef.current);
+        setB(bRef.current);
+
+        const newBones = bonesRef.current + 10 * comboRef.current;
         setBones(newBones);
-        setCombo(Math.min(combo + 1, 4));
+        bonesRef.current = newBones;
+
+        const newCombo = Math.min(comboRef.current + 1, 4);
+        setCombo(newCombo);
+        comboRef.current = newCombo;
+
         confetti({ particleCount: 120, spread: 80, origin: { x: 0.5, y: 0.6 } });
       }
-      dragging = null;
+      draggingRef.current = null;
     };
 
     canvas.addEventListener('pointerdown', handlePointerDown);
@@ -140,15 +162,19 @@ export default function PivotCanvas() {
     window.addEventListener('pointerup', handlePointerUp);
 
     return () => {
+      cancelAnimationFrame(rafId);
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [a, b, bones, combo]);
+  }, []); // Run once on mount
 
   return (
     <div className="relative">
-      <canvas ref={canvasRef} className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20" />
+      <canvas 
+        ref={canvasRef} 
+        className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20" 
+      />
       <div className="absolute top-8 left-8 bg-black/70 px-6 py-3 rounded-2xl text-3xl font-bold text-[#ffff00] flex items-center gap-3">
         🐼💀 BONES: <span className="text-[#00ffcc]">{bones}</span>
         <span className="text-2xl">×{combo}</span>
