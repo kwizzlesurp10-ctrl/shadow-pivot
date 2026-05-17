@@ -10,10 +10,8 @@ export default function PivotCanvas() {
   const [bones, setBones] = useState(420);
   const [combo, setCombo] = useState(1);
 
-  // Accessibility: Live region for screen readers
   const liveRegionRef = useRef<HTMLDivElement>(null);
 
-  // Refs for live values inside RAF without causing re-renders or effect restarts
   const aRef = useRef(a);
   const bRef = useRef(b);
   const bonesRef = useRef(bones);
@@ -21,13 +19,16 @@ export default function PivotCanvas() {
   const draggingRef = useRef<'left' | 'right' | null>(null);
   const prefersReducedMotionRef = useRef(false);
 
-  // Keep refs in sync when React state updates
+  // For subtle product pop animation
+  const lastProductRef = useRef(56);
+  const productPopRef = useRef(0); // frame counter for pop effect
+
   useEffect(() => { aRef.current = a; }, [a]);
   useEffect(() => { bRef.current = b; }, [b]);
   useEffect(() => { bonesRef.current = bones; }, [bones]);
   useEffect(() => { comboRef.current = combo; }, [combo]);
 
-  // Respect prefers-reduced-motion (WCAG 2.2 SC 2.3.3)
+  // Respect prefers-reduced-motion
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     prefersReducedMotionRef.current = mediaQuery.matches;
@@ -47,7 +48,6 @@ export default function PivotCanvas() {
   const LEFT_PIVOT_X = 150;
   const RIGHT_PIVOT_X = 1050;
 
-  // Helper to announce messages to screen readers
   const announce = (message: string) => {
     if (liveRegionRef.current) {
       liveRegionRef.current.textContent = message;
@@ -57,44 +57,37 @@ export default function PivotCanvas() {
     }
   };
 
-  // Keyboard handler for accessibility
+  // Simple line intersection helper (for better product positioning)
+  const getLineIntersection = (
+    x1: number, y1: number, x2: number, y2: number,
+    x3: number, y3: number, x4: number, y4: number
+  ) => {
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 0.001) return null; // parallel lines
+
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const ix = x1 + t * (x2 - x1);
+    const iy = y1 + t * (y2 - y1);
+    return { x: ix, y: iy };
+  };
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     let changed = false;
     let newA = aRef.current;
     let newB = bRef.current;
 
     switch (e.key) {
-      case 'ArrowLeft':
-        newA = Math.max(1, aRef.current - 1);
-        aRef.current = newA;
-        changed = true;
-        break;
-      case 'ArrowRight':
-        newA = Math.min(12, aRef.current + 1);
-        aRef.current = newA;
-        changed = true;
-        break;
-      case 'ArrowUp':
-        newB = Math.min(12, bRef.current + 1);
-        bRef.current = newB;
-        changed = true;
-        break;
-      case 'ArrowDown':
-        newB = Math.max(1, bRef.current - 1);
-        bRef.current = newB;
-        changed = true;
-        break;
-      default:
-        return;
+      case 'ArrowLeft': newA = Math.max(1, aRef.current - 1); aRef.current = newA; changed = true; break;
+      case 'ArrowRight': newA = Math.min(12, aRef.current + 1); aRef.current = newA; changed = true; break;
+      case 'ArrowUp': newB = Math.min(12, bRef.current + 1); bRef.current = newB; changed = true; break;
+      case 'ArrowDown': newB = Math.max(1, bRef.current - 1); bRef.current = newB; changed = true; break;
+      default: return;
     }
 
     if (changed) {
       e.preventDefault();
-      // Commit to state so UI (Bones display) stays in sync
       setA(newA);
       setB(newB);
-
-      // Announce change
       const product = newA * newB;
       announce(`Factor updated. A: ${newA}, B: ${newB}. Product is now ${product}`);
     }
@@ -163,21 +156,52 @@ export default function PivotCanvas() {
       ctx.stroke();
 
       const product = aRef.current * bRef.current;
-      const interX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
-      const interY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.45;
+
+      // Calculate intersection of the two pivot lines for better visual metaphor
+      const intersection = getLineIntersection(
+        LEFT_PIVOT_X, PIVOT_Y, pointerRightX, RULER_Y - 40,
+        RIGHT_PIVOT_X, PIVOT_Y, pointerLeftX, RULER_Y - 40
+      );
+
+      let interX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
+      let interY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.45;
+
+      if (intersection) {
+        interX = intersection.x;
+        interY = intersection.y;
+      }
+
+      // Subtle product pop animation
+      if (product !== lastProductRef.current) {
+        productPopRef.current = 10; // start pop (10 frames)
+        lastProductRef.current = product;
+      }
+
+      const popScale = productPopRef.current > 0 
+        ? 1 + (productPopRef.current / 10) * 0.25 
+        : 1;
+
+      if (productPopRef.current > 0) productPopRef.current--;
+
+      // Draw product box with pop scale
+      ctx.save();
+      ctx.translate(interX, interY);
+      ctx.scale(popScale, popScale);
 
       ctx.shadowBlur = 60;
       ctx.shadowColor = '#ffff00';
       ctx.fillStyle = '#111111';
-      ctx.fillRect(interX - 65, interY - 55, 130, 90);
+      ctx.fillRect(-65, -55, 130, 90);
       ctx.strokeStyle = '#ffff00';
       ctx.lineWidth = 8;
-      ctx.strokeRect(interX - 65, interY - 55, 130, 90);
+      ctx.strokeRect(-65, -55, 130, 90);
 
       ctx.fillStyle = '#ffff00';
       ctx.font = 'bold 62px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(product.toString(), interX, interY + 22);
+      ctx.fillText(product.toString(), 0, 22);
+
+      ctx.restore();
 
       rafId = requestAnimationFrame(draw);
     };
@@ -243,7 +267,6 @@ export default function PivotCanvas() {
 
   return (
     <div className="relative">
-      {/* Visible instructions */}
       <div className="mb-3 text-center text-sm text-[#00ffcc]/70 font-mono">
         Drag the cyan pointers • Arrow keys when focused • Release to earn Bones
       </div>
@@ -258,7 +281,6 @@ export default function PivotCanvas() {
         className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20 focus:outline-none focus:ring-2 focus:ring-[#00ffcc] focus:ring-offset-2 focus:ring-offset-[#0a0a0a]"
       />
 
-      {/* Live region for screen reader announcements */}
       <div
         ref={liveRegionRef}
         aria-live="polite"
@@ -266,7 +288,6 @@ export default function PivotCanvas() {
         className="sr-only"
       />
 
-      {/* Visually hidden instructions for accessibility */}
       <div id="game-instructions" className="sr-only">
         Use mouse, touch, or keyboard arrow keys to change the factors.
         Left/Right arrows adjust factor A. Up/Down arrows adjust factor B.
