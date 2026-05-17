@@ -21,7 +21,7 @@ export default function PivotCanvas() {
 
   // For subtle product pop animation
   const lastProductRef = useRef(56);
-  const productPopRef = useRef(0); // frame counter for pop effect
+  const productPopRef = useRef(0);
 
   useEffect(() => { aRef.current = a; }, [a]);
   useEffect(() => { bRef.current = b; }, [b]);
@@ -48,6 +48,11 @@ export default function PivotCanvas() {
   const LEFT_PIVOT_X = 150;
   const RIGHT_PIVOT_X = 1050;
 
+  // Keep product box comfortably inside the canvas
+  const PRODUCT_BOX_WIDTH = 130;
+  const PRODUCT_BOX_HEIGHT = 90;
+  const MARGIN = 80;
+
   const announce = (message: string) => {
     if (liveRegionRef.current) {
       liveRegionRef.current.textContent = message;
@@ -57,18 +62,15 @@ export default function PivotCanvas() {
     }
   };
 
-  // Simple line intersection helper (for better product positioning)
-  const getLineIntersection = (
-    x1: number, y1: number, x2: number, y2: number,
-    x3: number, y3: number, x4: number, y4: number
-  ) => {
+  // Calculate intersection of two lines
+  const getLineIntersection = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number) => {
     const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if (Math.abs(denom) < 0.001) return null; // parallel lines
-
+    if (Math.abs(denom) < 0.001) return null;
     const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-    const ix = x1 + t * (x2 - x1);
-    const iy = y1 + t * (y2 - y1);
-    return { x: ix, y: iy };
+    return {
+      x: x1 + t * (x2 - x1),
+      y: y1 + t * (y2 - y1),
+    };
   };
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -88,8 +90,7 @@ export default function PivotCanvas() {
       e.preventDefault();
       setA(newA);
       setB(newB);
-      const product = newA * newB;
-      announce(`Factor updated. A: ${newA}, B: ${newB}. Product is now ${product}`);
+      announce(`Factor updated. A: ${newA}, B: ${newB}. Product is now ${newA * newB}`);
     }
   }, []);
 
@@ -105,12 +106,14 @@ export default function PivotCanvas() {
     const draw = () => {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
+      // Background
       const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       grad.addColorStop(0, '#1a1a1a');
       grad.addColorStop(1, '#0f0a05');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+      // Ruler
       ctx.strokeStyle = '#22ff88';
       ctx.lineWidth = 8;
       ctx.beginPath();
@@ -127,6 +130,7 @@ export default function PivotCanvas() {
         ctx.fillText(i.toString(), x - 10, RULER_Y + 55);
       }
 
+      // Red pivots
       ctx.fillStyle = '#ff0033';
       ctx.shadowBlur = 40;
       ctx.shadowColor = '#ff0033';
@@ -136,12 +140,14 @@ export default function PivotCanvas() {
       const pointerLeftX = 100 + (aRef.current * 83.33);
       const pointerRightX = 100 + (bRef.current * 83.33);
 
+      // Cyan pointers
       ctx.shadowBlur = 30;
       ctx.shadowColor = '#00ffff';
       ctx.fillStyle = '#00ffff';
       ctx.beginPath(); ctx.arc(pointerLeftX, RULER_Y - 40, 28, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(pointerRightX, RULER_Y - 40, 28, 0, Math.PI * 2); ctx.fill();
 
+      // Crossing lines
       ctx.strokeStyle = '#ffcc00';
       ctx.lineWidth = 14;
       ctx.shadowBlur = 25;
@@ -157,49 +163,61 @@ export default function PivotCanvas() {
 
       const product = aRef.current * bRef.current;
 
-      // Calculate intersection of the two pivot lines for better visual metaphor
+      // Calculate intersection point
       const intersection = getLineIntersection(
-        LEFT_PIVOT_X, PIVOT_Y, pointerRightX, RULER_Y - 40,
-        RIGHT_PIVOT_X, PIVOT_Y, pointerLeftX, RULER_Y - 40
+        LEFT_PIVOT_X, PIVOT_Y,
+        pointerRightX, RULER_Y - 40,
+        RIGHT_PIVOT_X, PIVOT_Y,
+        pointerLeftX, RULER_Y - 40
       );
 
-      let interX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
-      let interY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.45;
+      // Default to center, then try to use intersection with clamping
+      let targetX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
+      let targetY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.42;
 
       if (intersection) {
-        interX = intersection.x;
-        interY = intersection.y;
+        targetX = intersection.x;
+        targetY = intersection.y;
       }
 
-      // Subtle product pop animation
+      // Clamp so the product box never clips
+      const minX = MARGIN + PRODUCT_BOX_WIDTH / 2;
+      const maxX = WIDTH - MARGIN - PRODUCT_BOX_WIDTH / 2;
+      const minY = 120;
+      const maxY = RULER_Y - 80;
+
+      const interX = Math.max(minX, Math.min(maxX, targetX));
+      const interY = Math.max(minY, Math.min(maxY, targetY));
+
+      // Trigger pop animation when product changes
       if (product !== lastProductRef.current) {
-        productPopRef.current = 10; // start pop (10 frames)
+        productPopRef.current = 9;
         lastProductRef.current = product;
       }
 
-      const popScale = productPopRef.current > 0 
-        ? 1 + (productPopRef.current / 10) * 0.25 
+      const popScale = productPopRef.current > 0
+        ? 1 + (productPopRef.current / 9) * 0.22
         : 1;
 
       if (productPopRef.current > 0) productPopRef.current--;
 
-      // Draw product box with pop scale
+      // Draw product box (clamped + pop animation)
       ctx.save();
       ctx.translate(interX, interY);
       ctx.scale(popScale, popScale);
 
-      ctx.shadowBlur = 60;
+      ctx.shadowBlur = 55;
       ctx.shadowColor = '#ffff00';
       ctx.fillStyle = '#111111';
-      ctx.fillRect(-65, -55, 130, 90);
+      ctx.fillRect(-PRODUCT_BOX_WIDTH / 2, -PRODUCT_BOX_HEIGHT / 2, PRODUCT_BOX_WIDTH, PRODUCT_BOX_HEIGHT);
       ctx.strokeStyle = '#ffff00';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(-65, -55, 130, 90);
+      ctx.lineWidth = 7;
+      ctx.strokeRect(-PRODUCT_BOX_WIDTH / 2, -PRODUCT_BOX_HEIGHT / 2, PRODUCT_BOX_WIDTH, PRODUCT_BOX_HEIGHT);
 
       ctx.fillStyle = '#ffff00';
-      ctx.font = 'bold 62px monospace';
+      ctx.font = 'bold 58px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(product.toString(), 0, 22);
+      ctx.fillText(product.toString(), 0, 18);
 
       ctx.restore();
 
