@@ -1,6 +1,6 @@
 // components/PivotCanvas.tsx
 'use client';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 
 export default function PivotCanvas() {
@@ -51,12 +51,54 @@ export default function PivotCanvas() {
   const announce = (message: string) => {
     if (liveRegionRef.current) {
       liveRegionRef.current.textContent = message;
-      // Clear after a short delay so repeated announcements can work
       setTimeout(() => {
         if (liveRegionRef.current) liveRegionRef.current.textContent = '';
       }, 1500);
     }
   };
+
+  // Keyboard handler for accessibility
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    let changed = false;
+    let newA = aRef.current;
+    let newB = bRef.current;
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        newA = Math.max(1, aRef.current - 1);
+        aRef.current = newA;
+        changed = true;
+        break;
+      case 'ArrowRight':
+        newA = Math.min(12, aRef.current + 1);
+        aRef.current = newA;
+        changed = true;
+        break;
+      case 'ArrowUp':
+        newB = Math.min(12, bRef.current + 1);
+        bRef.current = newB;
+        changed = true;
+        break;
+      case 'ArrowDown':
+        newB = Math.max(1, bRef.current - 1);
+        bRef.current = newB;
+        changed = true;
+        break;
+      default:
+        return;
+    }
+
+    if (changed) {
+      e.preventDefault();
+      // Commit to state so UI (Bones display) stays in sync
+      setA(newA);
+      setB(newB);
+
+      // Announce change
+      const product = newA * newB;
+      announce(`Factor updated. A: ${newA}, B: ${newB}. Product is now ${product}`);
+    }
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -121,7 +163,6 @@ export default function PivotCanvas() {
       ctx.stroke();
 
       const product = aRef.current * bRef.current;
-      // Simplified stable positioning for the product box (centered for reliability)
       const interX = (LEFT_PIVOT_X + RIGHT_PIVOT_X) / 2;
       const interY = PIVOT_Y + (RULER_Y - PIVOT_Y) * 0.45;
 
@@ -168,7 +209,6 @@ export default function PivotCanvas() {
 
     const handlePointerUp = () => {
       if (draggingRef.current) {
-        // Commit final values to React state for UI sync
         setA(aRef.current);
         setB(bRef.current);
 
@@ -180,12 +220,10 @@ export default function PivotCanvas() {
         setCombo(newCombo);
         comboRef.current = newCombo;
 
-        // Only trigger celebration confetti if user has not enabled reduced motion
         if (!prefersReducedMotionRef.current) {
           confetti({ particleCount: 120, spread: 80, origin: { x: 0.5, y: 0.6 } });
         }
 
-        // Announce to screen readers
         announce(`Pivot complete. Product is ${aRef.current * bRef.current}. Bones increased to ${newBones}. Combo x${newCombo}`);
       }
       draggingRef.current = null;
@@ -205,12 +243,19 @@ export default function PivotCanvas() {
 
   return (
     <div className="relative">
+      {/* Visible instructions */}
+      <div className="mb-3 text-center text-sm text-[#00ffcc]/70 font-mono">
+        Drag the cyan pointers • Arrow keys when focused • Release to earn Bones
+      </div>
+
       <canvas
         ref={canvasRef}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
         role="application"
-        aria-label="Interactive multiplication pivot game. Drag the cyan pointers on the glowing number line to set factors A and B. Watch the crossing pivot lines and central product display update in real time."
+        aria-label="Interactive multiplication pivot game. Use arrow keys or drag the cyan pointers."
         aria-describedby="game-instructions"
-        className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20"
+        className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20 focus:outline-none focus:ring-2 focus:ring-[#00ffcc] focus:ring-offset-2 focus:ring-offset-[#0a0a0a]"
       />
 
       {/* Live region for screen reader announcements */}
@@ -223,9 +268,9 @@ export default function PivotCanvas() {
 
       {/* Visually hidden instructions for accessibility */}
       <div id="game-instructions" className="sr-only">
-        Use mouse, touch, or keyboard to drag the cyan circular pointers on the number line ruler.
-        The red pivots at the top send glowing lines that cross. The large yellow number in the center shows the product of the two factors.
-        Successfully pivoting awards Bones and increases your combo multiplier.
+        Use mouse, touch, or keyboard arrow keys to change the factors.
+        Left/Right arrows adjust factor A. Up/Down arrows adjust factor B.
+        The large yellow number shows the current product.
       </div>
 
       <div className="absolute top-8 left-8 bg-black/70 px-6 py-3 rounded-2xl text-3xl font-bold text-[#ffff00] flex items-center gap-3">
