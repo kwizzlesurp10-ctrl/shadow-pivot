@@ -10,18 +10,35 @@ export default function PivotCanvas() {
   const [bones, setBones] = useState(420);
   const [combo, setCombo] = useState(1);
 
+  // Accessibility: Live region for screen readers
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+
   // Refs for live values inside RAF without causing re-renders or effect restarts
   const aRef = useRef(a);
   const bRef = useRef(b);
   const bonesRef = useRef(bones);
   const comboRef = useRef(combo);
   const draggingRef = useRef<'left' | 'right' | null>(null);
+  const prefersReducedMotionRef = useRef(false);
 
-  // Keep refs in sync when React state updates (e.g. after pointer up)
+  // Keep refs in sync when React state updates
   useEffect(() => { aRef.current = a; }, [a]);
   useEffect(() => { bRef.current = b; }, [b]);
   useEffect(() => { bonesRef.current = bones; }, [bones]);
   useEffect(() => { comboRef.current = combo; }, [combo]);
+
+  // Respect prefers-reduced-motion (WCAG 2.2 SC 2.3.3)
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    prefersReducedMotionRef.current = mediaQuery.matches;
+
+    const handleChange = (e: MediaQueryListEvent) => {
+      prefersReducedMotionRef.current = e.matches;
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   const WIDTH = 1200;
   const HEIGHT = 700;
@@ -29,6 +46,17 @@ export default function PivotCanvas() {
   const PIVOT_Y = 180;
   const LEFT_PIVOT_X = 150;
   const RIGHT_PIVOT_X = 1050;
+
+  // Helper to announce messages to screen readers
+  const announce = (message: string) => {
+    if (liveRegionRef.current) {
+      liveRegionRef.current.textContent = message;
+      // Clear after a short delay so repeated announcements can work
+      setTimeout(() => {
+        if (liveRegionRef.current) liveRegionRef.current.textContent = '';
+      }, 1500);
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -152,7 +180,13 @@ export default function PivotCanvas() {
         setCombo(newCombo);
         comboRef.current = newCombo;
 
-        confetti({ particleCount: 120, spread: 80, origin: { x: 0.5, y: 0.6 } });
+        // Only trigger celebration confetti if user has not enabled reduced motion
+        if (!prefersReducedMotionRef.current) {
+          confetti({ particleCount: 120, spread: 80, origin: { x: 0.5, y: 0.6 } });
+        }
+
+        // Announce to screen readers
+        announce(`Pivot complete. Product is ${aRef.current * bRef.current}. Bones increased to ${newBones}. Combo x${newCombo}`);
       }
       draggingRef.current = null;
     };
@@ -167,14 +201,33 @@ export default function PivotCanvas() {
       canvas.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, []); // Run once on mount
+  }, []);
 
   return (
     <div className="relative">
-      <canvas 
-        ref={canvasRef} 
-        className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20" 
+      <canvas
+        ref={canvasRef}
+        role="application"
+        aria-label="Interactive multiplication pivot game. Drag the cyan pointers on the glowing number line to set factors A and B. Watch the crossing pivot lines and central product display update in real time."
+        aria-describedby="game-instructions"
+        className="border border-[#00ffcc]/30 rounded-3xl shadow-2xl shadow-[#00ffcc]/20"
       />
+
+      {/* Live region for screen reader announcements */}
+      <div
+        ref={liveRegionRef}
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      />
+
+      {/* Visually hidden instructions for accessibility */}
+      <div id="game-instructions" className="sr-only">
+        Use mouse, touch, or keyboard to drag the cyan circular pointers on the number line ruler.
+        The red pivots at the top send glowing lines that cross. The large yellow number in the center shows the product of the two factors.
+        Successfully pivoting awards Bones and increases your combo multiplier.
+      </div>
+
       <div className="absolute top-8 left-8 bg-black/70 px-6 py-3 rounded-2xl text-3xl font-bold text-[#ffff00] flex items-center gap-3">
         🐼💀 BONES: <span className="text-[#00ffcc]">{bones}</span>
         <span className="text-2xl">×{combo}</span>
